@@ -41,7 +41,7 @@ but for a team under deadline pressure, consistency beats optionality:
 | Job queue | Redis + Celery (analysis runs async, PCAPs can be large) |
 | Database | PostgreSQL (sessions, findings, certs, reports) |
 | ML | scikit-learn (Isolation Forest for anomaly), XGBoost + SHAP (risk classification + explainability) — added only in Stage 9, after rules work |
-| Frontend | React + TypeScript + Tailwind, Recharts for charts |
+| Frontend | React + JavaScript (JSX) + Tailwind, Recharts for charts |
 | Reports | Jinja2 + WeasyPrint (HTML→PDF), plus raw JSON export |
 | Packaging | Docker Compose (api, worker, redis, postgres, frontend) |
 
@@ -309,9 +309,52 @@ every session.
       start Docker Desktop and run `docker compose up --build` from the repo root, which
       brings up `redis` + `postgres` + `api` + `worker` with `CELERY_TASK_ALWAYS_EAGER=false`
       (not exercised in this sandbox — its Docker engine wasn't running during this stage).
-- [ ] **Stage 8 — Dashboard (MVP demo milestone).** Upload → posture score → findings →
-      session drill-down, built against mocked/real JSON from Stage 7. This is the MVP
-      completion point per the docs: "MVP: complete PCAP → posture → report pipeline."
+- [x] **Stage 8 — Dashboard (MVP demo milestone).** React + JavaScript (JSX) + Tailwind v4
+      + Recharts, in `frontend/`, consuming Stage 7's `/api/analyses` contract directly (no
+      mocked JSON needed - the real backend was already up). Three pages in
+      `frontend/src/pages/`: `CapturesListPage` (upload panel + list of every analyzed
+      capture, polling every 4s so a running job flips to COMPLETE without a manual
+      refresh), `CaptureDashboardPage` (posture-score gauge, a findings-by-severity bar
+      chart, and a session table - polls the single capture every 1.5s while its status is
+      PENDING/RUNNING), and `SessionDetailPage` (STARTTLS negotiation, TLS handshake,
+      certificate, and the full evidence-linked findings list for one session, reached by
+      clicking a session row - this is the "drill-down from finding to session" the MVP
+      definition of done calls for). Deliberately plain JavaScript, not TypeScript - no
+      build-time type checking, so `frontend/src/api/client.js` is trusted at runtime
+      against the shapes `pipeline.py`/`models/analysis.py`/`rules/engine.py`/
+      `state_machine.py` actually produce (kept in sync by re-reading those on every
+      change) rather than enforced by a compiler; a backend schema drift shows up as
+      `undefined` in the UI instead of a build error.
+      **Visual direction (explicit user requirement, not the default AI-generated look):**
+      the pitch deck (`SecureMailScope_SIH2026_FINAL (1).pdf`) turned out to have no actual
+      dashboard screenshot - just an architecture diagram and a stat-card slide - so those
+      were mined for a palette (dark navy panels, a category-colored top bar, a
+      before/after posture circle) instead of being cloned pixel-for-pixel. The dashboard
+      is a dark, dense, monospace-forward theme deliberately built to read like Wireshark
+      or a SIEM/NOC console rather than a rounded-card SaaS template: near-black
+      background (`--color-bg: #090c11`), 1px square-cornered borders instead of shadows,
+      JetBrains Mono for every technical value (IPs, ports, cipher suite names, session
+      IDs, hex fingerprints), and one fixed severity/risk color mapping used everywhere
+      (`CRITICAL` red / `HIGH` orange / `MEDIUM` yellow / `LOW` blue / `INFO` gray, plus a
+      green "ok" tone for COMPLETE/LOW) so a finding's color means the same thing on the
+      captures list, the session table, and the findings panel.
+      `docker-compose.yml` gained a `frontend` service (multi-stage Dockerfile, `serve`-d
+      static build) with a `VITE_API_BASE_URL` build arg for the cross-origin-from-API
+      case; local `npm run dev` instead proxies `/api` straight to the backend
+      (`vite.config.js`), so no env var is needed for day-to-day development.
+      **How to test:** `cd backend && uvicorn app.main:app --reload --port 8000` in one
+      terminal, `cd frontend && npm install && npm run dev` in another, then open the
+      printed localhost URL. Upload
+      `securemail_test_pcaps/01_tls10_3des_rsa.pcap` and confirm it lands in the captures
+      list as `CRITICAL` with score `0.0`; open
+      `22_multiple_sessions_combined.pcap` and confirm the dashboard shows 3 sessions with
+      a findings-by-severity bar chart (1 CRITICAL, several HIGH) and that clicking
+      `SESS-SMTP-2` drills into a page showing `TLS_RSA_WITH_3DES_EDE_CBC_SHA`,
+      `forward_secrecy: false`, and all 5 findings with evidence/policy/recommendation
+      text; open `14_starttls_plaintext_after_advertisement.pcap` and confirm
+      `SESS-IMAP-1`'s single CRITICAL finding's evidence still contains the leaked
+      plaintext `LOGIN victim Password123!` command. `npm run build` (plain `vite build`,
+      no type-checking step) must complete with no errors before calling this stage done.
 - [ ] **Stage 9 — ML.** Feature extraction (19 features, §7.1) → Isolation Forest anomaly
       detection → XGBoost risk classification → SHAP explainability. Only start once
       Stage 6 produces reliable features; validate against the manifest's

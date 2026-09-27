@@ -1,7 +1,7 @@
-# Real deployment for Stage 7's async/persistence stack. Not exercised by `pytest` (which
-# runs against SQLite + Celery eager mode with zero external services - see
-# backend/tests/conftest.py) - this is for actually demoing the async pipeline end-to-end.
-# frontend joins this file in Stage 8.
+# Real deployment for the async/persistence stack (Stage 7) plus the dashboard (Stage 8).
+# Not exercised by `pytest` (which runs against SQLite + Celery eager mode with zero
+# external services - see backend/tests/conftest.py) - this is for actually demoing the
+# full pipeline end-to-end.
 services:
   redis:
     image: redis:7-alpine
@@ -47,6 +47,16 @@ services:
     depends_on:
       - redis
       - postgres
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: "http://localhost:8000"
+    depends_on:
+      - api
+    ports:
+      - "5173:5173"
 
 volumes:
   pgdata:
