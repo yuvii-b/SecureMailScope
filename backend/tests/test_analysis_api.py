@@ -37,6 +37,13 @@ def test_create_analysis_runs_eagerly_and_completes(dataset_dir):
     assert "Deprecated TLS version negotiated" in titles
     assert session["risk_level"] == "CRITICAL"
 
+    # Stage 9: ai_analysis is populated end-to-end once the committed models exist -
+    # never a bare score, always backed by ranked SHAP-derived contributing features.
+    ai_analysis = session["ai_analysis"]
+    assert ai_analysis is not None
+    assert ai_analysis["predicted_label"] == "weak"
+    assert ai_analysis["top_contributing_features"]
+
 
 def test_create_analysis_rejects_corrupt_file(tmp_path):
     bad_file = tmp_path / "not_a_pcap.bin"

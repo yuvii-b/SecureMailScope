@@ -1,0 +1,15 @@
+{
+  "sessions_trained_on": 26,
+  "label_counts": {
+    "safe": 7,
+    "weak": 16,
+    "anomalous": 3
+  },
+  "training_set_accuracy": 1.0,
+  "files_flagged_anomalous_by_isolation_forest": [
+    "07_tls13_safe.pcap",
+    "19_malformed_tls.pcap",
+    "21_unusual_cipher.pcap",
+    "22_multiple_sessions_combined.pcap"
+  ]
+}

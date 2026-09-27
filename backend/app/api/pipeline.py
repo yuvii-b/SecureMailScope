@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..certificates.analyzer import analyze_certificate_chain
+from ..ml.inference import analyze as analyze_ml
 from ..reassembly.reassembler import reassemble_pcap
 from ..rules.engine import evaluate_session
 from ..starttls.state_machine import classify as classify_starttls
@@ -41,6 +42,9 @@ def analyze_session(session) -> dict:
     tls_dict = tls_info.to_dict()
     certificate_dict = certificate_analysis.to_dict()
     rule_result = evaluate_session(tls_dict, certificate_dict, starttls_dict)
+    # Stage 9: purely additive - falls back to None if the models haven't been trained
+    # yet, so the rule engine above keeps working standalone either way (CLAUDE.md §12).
+    ai_analysis = analyze_ml(session, tls_dict, certificate_dict, starttls_dict)
 
     return {
         "starttls": starttls_dict,
@@ -49,6 +53,7 @@ def analyze_session(session) -> dict:
         "findings": [f.to_dict() for f in rule_result.findings],
         "posture_score": rule_result.posture_score,
         "risk_level": rule_result.risk_level,
+        "ai_analysis": ai_analysis,
     }
 
 
@@ -77,8 +82,7 @@ def analyze_pcap_file(path: Path, filename: str) -> dict:
             "starttls_negotiation": analysis["starttls"],
             "tls_handshake": analysis["tls_handshake"],
             "certificate": analysis["certificate"],
-            # ML scoring lands in Stage 9; report honestly rather than fabricate a score.
-            "ai_analysis": None,
+            "ai_analysis": analysis["ai_analysis"],
             "findings": analysis["findings"],
             "posture_score": analysis["posture_score"],
             "risk_level": analysis["risk_level"],

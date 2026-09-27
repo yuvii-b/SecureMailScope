@@ -355,32 +355,75 @@ every session.
       `SESS-IMAP-1`'s single CRITICAL finding's evidence still contains the leaked
       plaintext `LOGIN victim Password123!` command. `npm run build` (plain `vite build`,
       no type-checking step) must complete with no errors before calling this stage done.
-- [ ] **Stage 9 — ML.** Feature extraction (19 features, §7.1) → Isolation Forest anomaly
-      detection → XGBoost risk classification → SHAP explainability. Only start once
-      Stage 6 produces reliable features; validate against the manifest's
-      safe/weak/anomalous/mixed labels.
-      **In progress: feature extraction done.** `backend/app/ml/features.py` builds the
-      19-feature dict per session from the dicts Stages 3-5 already produce (no new
-      packet parsing). Two fields needed a small, additive Stage-3 change:
-      `ReassembledSession` gained `packet_count` and `duration_seconds` (total packets and
-      timestamp span for the flow - genuinely observable, just not tracked before).
-      Per CLAUDE.md §12, unobservable values are `None`, never guessed: `chain_valid`/
-      `certificate_valid` are `None` (not `False`) when the chain isn't fully captured,
-      and `handshake_duration` is always `None` for now - the TLS record parser
-      (`tls/records.py`) has no per-record capture timestamps to subtract, which would be
-      a Stage 4 change, not a feature-extraction one. `handshake_failure_count` is a
-      documented proxy (count of fatal TLS alerts), not a true retry count, for the same
-      reason. Still to do: build the training feature matrix across `genny.py`'s dataset,
-      Isolation Forest, XGBoost + SHAP, and wiring `ai_analysis` in
-      `backend/app/api/pipeline.py` (currently hardcoded `None`) up to real output.
-      **How to test:** `cd backend && python -m pytest -v` (106 tests total; 10 new in
-      `test_ml_features.py` covering the weak-TLS-1.0/3DES/static-RSA matrix (file `01`),
-      forward secrecy on ECDHE (file `03`), implicit TLS 1.3 with no STARTTLS command
-      (file `07`), an expired-but-self-signed-valid certificate (file `08`, confirming
-      `certificate_valid` and `chain_valid` are independent), the incomplete-chain
-      not-observable case (file `13`), a TLS-free POP3 session (file `15`), the malformed
-      handshake not being reported as a success (file `19`), and the always-`None`
-      `handshake_duration` gap.
+- [x] **Stage 9 — ML.** Feature extraction (19 features, §7.1) → Isolation Forest anomaly
+      detection → XGBoost risk classification → SHAP explainability, all in
+      `backend/app/ml/`. `features.py` builds the 19-feature dict per session from the
+      dicts Stages 3-5 already produce (no new packet parsing); per CLAUDE.md §12,
+      unobservable values are `None`, never guessed (`chain_valid`/`certificate_valid`
+      when the chain isn't fully captured; `handshake_duration` always, since the TLS
+      record parser has no per-record timestamps to subtract - a Stage 4 change, not a
+      feature-extraction one). `encoding.py`'s `FeatureEncoder` turns that dict into a
+      fixed-width numeric matrix: one-hot columns per categorical value seen at fit time
+      plus an `=__unseen__` catch-all bucket (deliberately not named `=UNKNOWN`, since
+      `protocol` itself can legitimately *be* the string `"UNKNOWN"` for files `19`/`21`'s
+      unidentifiable traffic - that must not collide with "a value the encoder has never
+      seen"), and a paired `<col>_observed` flag for every boolean/numeric so a `None`
+      is never silently conflated with a real `False`/`0`.
+
+      `dataset.py` assembles the labeled training set across all 22 `genny.py` files (26
+      sessions), labeled from `test_manifest.json`'s per-file safe/weak/anomalous field -
+      deliberately *not* the rule engine's own `risk_level` (kept decoupled per §12): a
+      diagnostic pass found the two disagree often, since every `genny.py` leaf cert is
+      self-signed by construction (drags "safe" TLS configs up to rule-engine HIGH) while
+      files `19`/`21`'s malformed/unidentifiable traffic trips no rule at all (scores a
+      misleadingly clean LOW). Training against the rule engine's own output would be
+      circular; the manifest label is the actual ground truth. File `22`
+      (`multiple_sessions_combined`, manifest label "mixed") gets a
+      `SESSION_LABEL_OVERRIDES` entry - `["safe", "weak", "weak"]` - derived by reading
+      `genny.py`'s construction order for that file, since `reassemble_pcap` sorts
+      sessions by client address and that happens to match the build order.
+
+      `anomaly.py` wraps an unsupervised `IsolationForest` (never sees the labels) and
+      normalizes its `decision_function` into a 0-1 `anomaly_score` + boolean
+      `anomaly_flag` using training-time min/max. `risk_model.py` wraps an XGBoost
+      multiclass classifier (`safe`/`weak`/`anomalous`) fit on the manifest labels, turns
+      its class probabilities into a single 0-100 `risk_score` via a documented weighted
+      formula (weak=0.7, anomalous=1.0, safe=0.0), and wires `shap.TreeExplainer` so
+      every score comes with a ranked, directional feature list (`increases_risk` /
+      `decreases_risk` + a normalized share of the explanation) - the §10 "must-have"
+      explainability requirement: never a bare score. With ~26 labeled sessions this is a
+      demonstration of the pipeline, not a claim of generalization (documented in the
+      module docstrings and in CLAUDE.md's own original Stage 9 note).
+
+      `train.py` (`python -m app.ml.train`) builds the dataset, fits the encoder and both
+      models, and persists all three via `joblib` to `backend/app/ml/models/` (committed
+      to the repo, matching Stage 7's SQLite "just run it" convention - no separate
+      training step needed to demo). `inference.py` lazy-loads those artifacts once and
+      exposes `analyze()`, wired into `backend/app/api/pipeline.py`'s `analyze_session()`
+      as the real `ai_analysis` value; if the artifacts are ever missing, `analyze()`
+      returns `None` rather than crashing, so the rule engine keeps working standalone
+      (§12) - `ai_analysis: null` was always a documented valid contract value (§7), never
+      a placeholder.
+      **How to test:** `cd backend && python -m pytest -v` (120 tests total; 10 in
+      `test_ml_features.py` from the feature-extraction phase; 14 new: 5 in
+      `test_ml_encoding.py` covering the fit/transform round-trip, the unseen-category
+      bucket, and the literal-`"UNKNOWN"`-value collision case; 3 in `test_ml_dataset.py`
+      confirming all 26 sessions are covered, file `22`'s per-session label override, and
+      files `19`/`20`/`21` all landing on `anomalous`; 6 in `test_ml_models.py` covering
+      Isolation Forest flagging files `19`/`21`, the risk classifier producing a valid
+      label + probabilities for every session, safe sessions scoring lower risk than
+      anomalous ones on average, SHAP-backed `explain()` output shape, and
+      `train.py`/`inference.py`'s persist-then-load round trip including the
+      graceful-`None`-when-missing fallback; plus one new assertion in
+      `test_analysis_api.py` confirming `ai_analysis` is populated end-to-end for a real
+      upload. To sanity-check by hand:
+      `cd backend && ../.venv/Scripts/python.exe -m app.ml.train` reprints a training
+      summary (`sessions_trained_on: 26`, per-label counts, training-set accuracy); then
+      `uvicorn app.main:app --reload --port 8000` and
+      `curl -X POST http://127.0.0.1:8000/api/analyses -F "file=@../securemail_test_pcaps/19_malformed_tls.pcap"`
+      followed by `curl http://127.0.0.1:8000/api/analyses/<capture_id>` - expect that
+      session's `ai_analysis.anomaly_flag: true`, `predicted_label: "anomalous"`, and a
+      non-empty `top_contributing_features` list.
 - [ ] **Stage 10 — Novelty (post-MVP).** Cryptographic fingerprinting, config/certificate
       drift detection, what-if remediation simulator, baseline comparison. Pick 2–3, not
       all — see priority table in §10.
