@@ -1,0 +1,50 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtualenv (root-level .venv, not backend-local)
+.venv/
+venv/
+env/
+
+# Packaging
+*.egg-info/
+dist/
+build/
+
+# Test / lint / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Secrets / local config ---
+.env
+.env.*
+!.env.example
+
+# --- Node / React frontend (Stage 8, not built yet) ---
+node_modules/
+frontend/dist/
+frontend/build/
+.npm/
+
+# --- Docker / Postgres (Stage 7+, not built yet) ---
+postgres_data/
+pgdata/
+
+# --- IDE / OS junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# --- Reports output (Stage 11, generated artifacts) ---
+backend/app/reports/output/
+*.pdf
+*.docx
+!securemail_test_pcaps/certificates/*.pdf

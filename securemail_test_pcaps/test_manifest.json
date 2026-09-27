@@ -1,0 +1,250 @@
+{
+  "project": "SecureMailScope",
+  "purpose": "Synthetic PCAP test dataset",
+  "generated_at_utc": "2026-09-27T16:29:13.004301+00:00",
+  "certificate_directory": "securemail_test_pcaps\\certificates",
+  "cases": [
+    {
+      "filename": "01_tls10_3des_rsa.pcap",
+      "protocol": "SMTP",
+      "scenario": "STARTTLS",
+      "tls_version": "0x0301",
+      "cipher": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+      "key_exchange": "RSA",
+      "label": "weak"
+    },
+    {
+      "filename": "02_tls11_rc4_rsa.pcap",
+      "protocol": "SMTP",
+      "scenario": "STARTTLS",
+      "tls_version": "0x0302",
+      "cipher": "TLS_RSA_WITH_RC4_128_SHA",
+      "key_exchange": "RSA",
+      "label": "weak"
+    },
+    {
+      "filename": "03_tls12_ecdhe_rsa_safe.pcap",
+      "protocol": "SMTP",
+      "scenario": "STARTTLS",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "safe"
+    },
+    {
+      "filename": "04_tls12_dhe_rsa.pcap",
+      "protocol": "SMTP",
+      "scenario": "STARTTLS",
+      "tls_version": "0x0303",
+      "cipher": "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "DHE",
+      "label": "safe"
+    },
+    {
+      "filename": "05_tls12_null_cipher.pcap",
+      "protocol": "SMTP",
+      "scenario": "STARTTLS",
+      "tls_version": "0x0303",
+      "cipher": "TLS_NULL_WITH_NULL_NULL",
+      "key_exchange": "NULL",
+      "label": "weak"
+    },
+    {
+      "filename": "06_tls12_dh_anon_3des.pcap",
+      "protocol": "SMTP",
+      "scenario": "STARTTLS",
+      "tls_version": "0x0303",
+      "cipher": "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
+      "key_exchange": "DHE-ANON",
+      "label": "weak"
+    },
+    {
+      "protocol": "SMTPS",
+      "scenario": "IMPLICIT_TLS13",
+      "tls_version": "0x0304",
+      "cipher": "TLS_AES_128_GCM_SHA256",
+      "key_exchange": "TLS1.3",
+      "label": "safe",
+      "filename": "07_tls13_safe.pcap"
+    },
+    {
+      "filename": "08_cert_expired.pcap",
+      "protocol": "SMTP",
+      "scenario": "CERT_EXPIRED",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "weak"
+    },
+    {
+      "filename": "09_cert_wrong_hostname.pcap",
+      "protocol": "SMTP",
+      "scenario": "CERT_WRONG_HOSTNAME",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "weak"
+    },
+    {
+      "filename": "10_cert_self_signed.pcap",
+      "protocol": "SMTP",
+      "scenario": "CERT_SELF_SIGNED",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "weak"
+    },
+    {
+      "filename": "11_cert_weak_key.pcap",
+      "protocol": "SMTP",
+      "scenario": "CERT_WEAK_KEY",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "weak"
+    },
+    {
+      "filename": "12_cert_weak_signature_sha1.pcap",
+      "protocol": "SMTP",
+      "scenario": "CERT_WEAK_SIGNATURE",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "weak"
+    },
+    {
+      "filename": "13_cert_incomplete_chain.pcap",
+      "protocol": "SMTP",
+      "scenario": "CERT_INCOMPLETE_CHAIN",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "weak"
+    },
+    {
+      "protocol": "IMAP",
+      "scenario": "STARTTLS_not_used",
+      "label": "weak",
+      "filename": "14_starttls_not_used.pcap"
+    },
+    {
+      "protocol": "IMAP",
+      "scenario": "STARTTLS_rejected",
+      "label": "weak",
+      "filename": "14_starttls_rejected.pcap"
+    },
+    {
+      "protocol": "IMAP",
+      "scenario": "STARTTLS_plaintext_after_advertisement",
+      "label": "weak",
+      "filename": "14_starttls_plaintext_after_advertisement.pcap"
+    },
+    {
+      "protocol": "POP3",
+      "scenario": "PLAINTEXT_CREDENTIALS",
+      "label": "weak",
+      "filename": "15_pop3_plaintext_credentials.pcap"
+    },
+    {
+      "filename": "16_tcp_segmented_tls_handshake.pcap",
+      "protocol": "SMTP",
+      "scenario": "TCP_SEGMENTED_TLS_HANDSHAKE",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "safe"
+    },
+    {
+      "filename": "17_tcp_retransmission.pcap",
+      "protocol": "SMTP",
+      "scenario": "TCP_RETRANSMISSION",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "safe"
+    },
+    {
+      "filename": "18_tcp_out_of_order.pcap",
+      "protocol": "SMTP",
+      "scenario": "TCP_OUT_OF_ORDER",
+      "tls_version": "0x0303",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "safe"
+    },
+    {
+      "protocol": "SMTP-like",
+      "scenario": "MALFORMED_TLS",
+      "tls_version": "0x0399",
+      "label": "anomalous",
+      "filename": "19_malformed_tls.pcap"
+    },
+    {
+      "filename": "20_unexpected_tls_version.pcap",
+      "protocol": "SMTP",
+      "scenario": "UNEXPECTED_TLS_VERSION",
+      "tls_version": "0x0399",
+      "cipher": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+      "key_exchange": "ECDHE",
+      "label": "anomalous"
+    },
+    {
+      "protocol": "SMTP-like",
+      "scenario": "UNUSUAL_CIPHER",
+      "tls_version": "0x0303",
+      "cipher": "UNKNOWN_0xfefe",
+      "label": "anomalous",
+      "filename": "21_unusual_cipher.pcap"
+    },
+    {
+      "filename": "22_multiple_sessions_combined.pcap",
+      "scenario": "MULTIPLE_SESSIONS",
+      "label": "mixed",
+      "contains": [
+        "safe",
+        "weak"
+      ]
+    }
+  ],
+  "ml_dataset": {
+    "safe": [
+      "03_tls12_ecdhe_rsa_safe.pcap",
+      "04_tls12_dhe_rsa.pcap",
+      "07_tls13_safe.pcap",
+      "16_tcp_segmented_tls_handshake.pcap"
+    ],
+    "weak": [
+      "01_tls10_3des_rsa.pcap",
+      "02_tls11_rc4_rsa.pcap",
+      "05_tls12_null_cipher.pcap",
+      "06_tls12_dh_anon_3des.pcap",
+      "08_cert_expired.pcap",
+      "09_cert_wrong_hostname.pcap",
+      "10_cert_self_signed.pcap",
+      "11_cert_weak_key.pcap",
+      "12_cert_weak_signature_sha1.pcap",
+      "13_cert_incomplete_chain.pcap",
+      "14_starttls_not_used.pcap",
+      "14_starttls_rejected.pcap",
+      "14_starttls_plaintext_after_advertisement.pcap",
+      "15_pop3_plaintext_credentials.pcap"
+    ],
+    "anomalous": [
+      "17_tcp_retransmission.pcap",
+      "18_tcp_out_of_order.pcap",
+      "19_malformed_tls.pcap",
+      "20_unexpected_tls_version.pcap",
+      "21_unusual_cipher.pcap"
+    ],
+    "mixed": [
+      "22_multiple_sessions_combined.pcap"
+    ]
+  },
+  "notes": [
+    "Traffic is synthetic and intended for parser/unit/integration testing.",
+    "Certificates are real X.509 DER certificates.",
+    "The incomplete-chain PCAP intentionally carries only the leaf certificate.",
+    "Some NULL/anonymous cipher identifiers are synthetic edge cases.",
+    "Do not use embedded example credentials outside the test environment."
+  ]
+}
