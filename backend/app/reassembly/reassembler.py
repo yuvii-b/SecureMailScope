@@ -66,6 +66,8 @@ class ReassembledSession:
     protocol_confidence: str
     protocol_evidence: str
     capture_time: Optional[float] = None
+    packet_count: int = 0
+    duration_seconds: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -77,6 +79,8 @@ class ReassembledSession:
             "protocol_evidence": self.protocol_evidence,
             "client_to_server": self.client_to_server.to_dict(),
             "server_to_client": self.server_to_client.to_dict(),
+            "packet_count": self.packet_count,
+            "duration_seconds": self.duration_seconds,
         }
 
 
@@ -186,7 +190,9 @@ def reassemble_pcap(path: Path) -> list:
 
         proto = identify_protocol(server_endpoint[1], server_to_client.data)
 
-        capture_time = min((float(p.time) for p in raw_packets), default=None)
+        packet_times = [float(p.time) for p in raw_packets]
+        capture_time = min(packet_times, default=None)
+        duration_seconds = (max(packet_times) - capture_time) if packet_times else None
 
         sessions.append(
             ReassembledSession(
@@ -199,6 +205,8 @@ def reassemble_pcap(path: Path) -> list:
                 protocol_confidence=proto["confidence"],
                 protocol_evidence=proto["evidence"],
                 capture_time=capture_time,
+                packet_count=len(raw_packets),
+                duration_seconds=duration_seconds,
             )
         )
 

@@ -359,6 +359,28 @@ every session.
       detection → XGBoost risk classification → SHAP explainability. Only start once
       Stage 6 produces reliable features; validate against the manifest's
       safe/weak/anomalous/mixed labels.
+      **In progress: feature extraction done.** `backend/app/ml/features.py` builds the
+      19-feature dict per session from the dicts Stages 3-5 already produce (no new
+      packet parsing). Two fields needed a small, additive Stage-3 change:
+      `ReassembledSession` gained `packet_count` and `duration_seconds` (total packets and
+      timestamp span for the flow - genuinely observable, just not tracked before).
+      Per CLAUDE.md §12, unobservable values are `None`, never guessed: `chain_valid`/
+      `certificate_valid` are `None` (not `False`) when the chain isn't fully captured,
+      and `handshake_duration` is always `None` for now - the TLS record parser
+      (`tls/records.py`) has no per-record capture timestamps to subtract, which would be
+      a Stage 4 change, not a feature-extraction one. `handshake_failure_count` is a
+      documented proxy (count of fatal TLS alerts), not a true retry count, for the same
+      reason. Still to do: build the training feature matrix across `genny.py`'s dataset,
+      Isolation Forest, XGBoost + SHAP, and wiring `ai_analysis` in
+      `backend/app/api/pipeline.py` (currently hardcoded `None`) up to real output.
+      **How to test:** `cd backend && python -m pytest -v` (106 tests total; 10 new in
+      `test_ml_features.py` covering the weak-TLS-1.0/3DES/static-RSA matrix (file `01`),
+      forward secrecy on ECDHE (file `03`), implicit TLS 1.3 with no STARTTLS command
+      (file `07`), an expired-but-self-signed-valid certificate (file `08`, confirming
+      `certificate_valid` and `chain_valid` are independent), the incomplete-chain
+      not-observable case (file `13`), a TLS-free POP3 session (file `15`), the malformed
+      handshake not being reported as a success (file `19`), and the always-`None`
+      `handshake_duration` gap.
 - [ ] **Stage 10 — Novelty (post-MVP).** Cryptographic fingerprinting, config/certificate
       drift detection, what-if remediation simulator, baseline comparison. Pick 2–3, not
       all — see priority table in §10.
