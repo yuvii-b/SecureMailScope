@@ -258,8 +258,57 @@ every session.
       a single CRITICAL STARTTLS finding whose `evidence` includes the leaked plaintext
       IMAP `LOGIN` command — this is a real passive-capture credential leak, not a
       contrived example).
-- [ ] **Stage 7 — Backend/API.** FastAPI routes implementing the JSON contract (§7);
-      Celery job queue for async analysis; PostgreSQL persistence.
+- [x] **Stage 7 — Backend/API.** New `backend/app/api/` package freezes the §7 JSON
+      contract: `POST /api/analyses` (upload, returns `{capture_id, status}`, 202),
+      `GET /api/analyses/{capture_id}` (status, and once `COMPLETE` the full
+      `schema_version` + `summary` + `sessions` body), `GET /api/analyses` (history list).
+      `app/api/pipeline.py` is the one place that wires
+      reassembly → STARTTLS → TLS handshake → certificate → rule engine (Stages 3-6) into
+      a per-session contract dict and a capture-level `summary` (`overall_health_score` =
+      mean posture score across sessions, `risk_level` = worst session's risk level —
+      one badly configured endpoint is enough to compromise mail flow through it).
+      `ai_analysis` is reported as `null` since ML is Stage 9 — never fabricate a score
+      for a stage that doesn't exist yet (§12). The old `POST /api/pcap/sessions`
+      (Stages 3-6) is left in place unchanged as a synchronous, no-persistence debug
+      endpoint; the new routes are additive, not a replacement.
+
+      Async job queue: `backend/app/worker.py` defines a Celery app and
+      `analyze_pcap_task`. `CELERY_TASK_ALWAYS_EAGER` defaults to `true`, so the task runs
+      synchronously in-process the moment `.delay()` is called — no Redis broker or
+      separate worker process required to develop or test on a machine without them
+      running (this sandbox's Docker Desktop engine wasn't up during this stage).
+      `docker-compose.yml` sets it to `false` for real deployment, where the `worker`
+      service actually consumes from the `redis` service asynchronously, matching the
+      locked-in stack (§3). Uploaded pcaps are saved to `UPLOAD_DIR` (default
+      `backend/uploads/`) keyed by `capture_id` so a real out-of-process worker can find
+      them by path.
+
+      Persistence: `backend/app/models/` has two SQLAlchemy models, `Capture` (one row per
+      upload/job: filename, status, summary, timestamps) and `SessionRecord` (one row per
+      reconstructed session, findings/tls_handshake/certificate stored as JSON columns
+      rather than further normalized tables — there's no cross-capture query requirement
+      yet, e.g. "all findings of severity X across every capture," to justify that extra
+      schema complexity; revisit if Stage 9/11 need it). `app/db.py`'s `DATABASE_URL`
+      defaults to a local SQLite file so `uvicorn`/`pytest` stay zero-dependency, matching
+      every prior stage's "just run it" convention — PostgreSQL remains the locked
+      production choice, wired via `docker-compose.yml`'s `DATABASE_URL` env var, not
+      swapped out. No Alembic yet; `Base.metadata.create_all()` on startup is enough for a
+      schema that hasn't shipped a single migration.
+      **How to test:** `cd backend && python -m pytest -v` (96 tests total; 5 new in
+      `test_analysis_api.py` covering upload→complete round-trip against `01`
+      (expect `risk_level: "CRITICAL"`), corrupt-file rejection, 404 for an unknown
+      `capture_id`, the history list, and stable `session_id`s across the multi-session
+      file `22`). `backend/tests/conftest.py` points `DATABASE_URL`/`UPLOAD_DIR` at
+      throwaway test-local paths before any app module is imported, so this suite still
+      needs no Postgres/Redis/Docker. To sanity-check by hand:
+      `uvicorn app.main:app --reload --port 8000`, then
+      `curl -X POST http://127.0.0.1:8000/api/analyses -F "file=@../securemail_test_pcaps/14_starttls_plaintext_after_advertisement.pcap"`
+      — returns `{"capture_id": "...", "status": "COMPLETE"}` immediately (eager mode);
+      `curl http://127.0.0.1:8000/api/analyses/<capture_id>` then returns the full
+      contract body with the STARTTLS-stripping finding. To exercise the real async path,
+      start Docker Desktop and run `docker compose up --build` from the repo root, which
+      brings up `redis` + `postgres` + `api` + `worker` with `CELERY_TASK_ALWAYS_EAGER=false`
+      (not exercised in this sandbox — its Docker engine wasn't running during this stage).
 - [ ] **Stage 8 — Dashboard (MVP demo milestone).** Upload → posture score → findings →
       session drill-down, built against mocked/real JSON from Stage 7. This is the MVP
       completion point per the docs: "MVP: complete PCAP → posture → report pipeline."

@@ -36,6 +36,11 @@ frontend/build/
 postgres_data/
 pgdata/
 
+# --- Stage 7: local SQLite fallback DB + uploaded pcaps + test artifacts ---
+backend/*.db
+backend/uploads/
+backend/tests/.test_*
+
 # --- IDE / OS junk ---
 .vscode/
 .idea/

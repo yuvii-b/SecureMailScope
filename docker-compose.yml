@@ -1,0 +1,53 @@
+# Real deployment for Stage 7's async/persistence stack. Not exercised by `pytest` (which
+# runs against SQLite + Celery eager mode with zero external services - see
+# backend/tests/conftest.py) - this is for actually demoing the async pipeline end-to-end.
+# frontend joins this file in Stage 8.
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: securemailscope
+      POSTGRES_PASSWORD: securemailscope
+      POSTGRES_DB: securemailscope
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://securemailscope:securemailscope@postgres:5432/securemailscope
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      - redis
+      - postgres
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: ./backend
+    command: celery -A app.worker.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://securemailscope:securemailscope@postgres:5432/securemailscope
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      - redis
+      - postgres
+
+volumes:
+  pgdata:
+  uploads:
