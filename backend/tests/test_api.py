@@ -101,6 +101,37 @@ def test_sessions_endpoint_includes_starttls_and_tls_handshake(dataset_dir):
     assert session["tls_handshake"]["forward_secrecy"] is True
 
 
+def test_sessions_endpoint_includes_certificate_analysis(dataset_dir):
+    pcap = dataset_dir / "03_tls12_ecdhe_rsa_safe.pcap"
+
+    with open(pcap, "rb") as f:
+        resp = client.post(
+            "/api/pcap/sessions",
+            files={"file": (pcap.name, f, "application/vnd.tcpdump.pcap")},
+        )
+
+    assert resp.status_code == 200
+    session = resp.json()["sessions"][0]
+    assert session["certificate"]["subject"] == "mail.example.test"
+    assert session["certificate"]["expired"] is False
+    assert session["certificate"]["hostname_match"] is True
+    assert session["certificate"]["chain_status"] == "OBSERVED_VALID"
+
+
+def test_sessions_endpoint_reports_incomplete_chain(dataset_dir):
+    pcap = dataset_dir / "13_cert_incomplete_chain.pcap"
+
+    with open(pcap, "rb") as f:
+        resp = client.post(
+            "/api/pcap/sessions",
+            files={"file": (pcap.name, f, "application/vnd.tcpdump.pcap")},
+        )
+
+    assert resp.status_code == 200
+    session = resp.json()["sessions"][0]
+    assert session["certificate"]["chain_status"] == "NOT_OBSERVABLE"
+
+
 def test_sessions_endpoint_rejects_corrupt_file(tmp_path):
     bad_file = tmp_path / "not_a_pcap.bin"
     bad_file.write_bytes(b"this is definitely not a capture" * 10)

@@ -193,10 +193,35 @@ every session.
       `"a002 NO STARTTLS unavailable"`) and `19_malformed_tls.pcap` (expect
       `starttls.status: "NOT_APPLICABLE_IMPLICIT_TLS"`, `tls_handshake.client_hello_seen:
       false`, and a fatal `handshake_failure` alert reported in `alerts`/`notes`).
-- [ ] **Stage 5 — Certificate analysis.** X.509 extraction from the TLS Certificate
-      handshake message; validity window vs. capture timestamp; key algorithm/length;
-      signature algorithm; SAN/hostname match; chain completeness (report "chain not
-      observable" vs. "chain invalid" — see file `13`); certificate fingerprint.
+- [x] **Stage 5 — Certificate analysis.** X.509 extraction from the DER bytes Stage 4
+      pulled out of the Certificate handshake message: subject/issuer, validity window
+      evaluated against the *capture's own timestamp* (earliest packet time in the
+      session, not wall-clock "now" — a capture from last year must not be judged
+      against today's date), key algorithm/length, signature algorithm, SAN/hostname
+      match against the session's observed SNI, SHA-256 fingerprint, and chain
+      completeness via real signature verification (`OBSERVED_VALID` / `NOT_OBSERVABLE`
+      / `INVALID`) rather than name-matching alone. Lives in
+      `backend/app/certificates/analyzer.py`, wired into `POST /api/pcap/sessions`'s
+      per-session response as `certificate`. `ReassembledSession` (Stage 3) gained a
+      `capture_time` field (min packet timestamp in the flow) to support this. Every
+      leaf certificate in `genny.py`'s dataset except the incomplete-chain one turns out
+      to be structurally self-signed (issuer == subject) — that's a property of the
+      generator's cert-building shortcuts, not a bug in this module; `13`'s leaf is the
+      only one genuinely signed by an absent intermediate, which is exactly the "chain
+      not observable" case CLAUDE.md called out.
+      **How to test:** `cd backend && python -m pytest -v` (72 tests total; 12 new in
+      `test_certificates.py` covering the full `08`–`13` cert-scenario matrix, the
+      no-certificate case (file `15`), fingerprint shape, and a hand-stitched two-cert
+      mismatch exercising the `INVALID` branch that `genny.py`'s dataset doesn't
+      otherwise produce; 2 new API tests in `test_api.py`. To sanity-check by hand:
+      `uvicorn app.main:app --reload --port 8000`, then
+      `curl -X POST http://127.0.0.1:8000/api/pcap/sessions -F "file=@../securemail_test_pcaps/13_cert_incomplete_chain.pcap"`
+      — expect `certificate.chain_status: "NOT_OBSERVABLE"`, `certificate.self_signed:
+      false`, `certificate.issuer: "SecureMailScope Intermediate CA"`. Also try
+      `08_cert_expired.pcap` (expect `certificate.expired: true`,
+      `certificate.chain_status: "OBSERVED_VALID"` since its leaf is self-signed) and
+      `03_tls12_ecdhe_rsa_safe.pcap` (expect `certificate.hostname_match: true`,
+      `certificate.key_length_bits: 2048`).
 - [ ] **Stage 6 — Rule engine.** Deterministic checks producing findings with severity +
       evidence (see §8 rule matrix). This is the correctness backbone — get this right
       before touching ML.

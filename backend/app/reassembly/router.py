@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from ..certificates.analyzer import analyze_certificate_chain
 from ..ingestion.validator import PcapValidationError, validate_pcap_file
 from ..starttls.state_machine import classify as classify_starttls
 from ..tls.handshake import analyze_tls_handshake
@@ -46,9 +48,20 @@ async def reassemble_sessions(file: UploadFile = File(...)) -> dict:
         tls_info = analyze_tls_handshake(
             starttls_result.tls_client_stream, starttls_result.tls_server_stream
         )
+        evaluation_time = (
+            datetime.fromtimestamp(session.capture_time, tz=timezone.utc)
+            if session.capture_time is not None
+            else None
+        )
+        certificate_analysis = analyze_certificate_chain(
+            tls_info.certificates_der_hex,
+            evaluation_time=evaluation_time,
+            hostname=tls_info.sni,
+        )
         session_dict = session.to_dict()
         session_dict["starttls"] = starttls_result.to_dict()
         session_dict["tls_handshake"] = tls_info.to_dict()
+        session_dict["certificate"] = certificate_analysis.to_dict()
         session_dicts.append(session_dict)
 
     return {
