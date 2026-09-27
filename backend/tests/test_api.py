@@ -132,6 +132,44 @@ def test_sessions_endpoint_reports_incomplete_chain(dataset_dir):
     assert session["certificate"]["chain_status"] == "NOT_OBSERVABLE"
 
 
+def test_sessions_endpoint_includes_rule_engine_findings(dataset_dir):
+    pcap = dataset_dir / "01_tls10_3des_rsa.pcap"
+
+    with open(pcap, "rb") as f:
+        resp = client.post(
+            "/api/pcap/sessions",
+            files={"file": (pcap.name, f, "application/vnd.tcpdump.pcap")},
+        )
+
+    assert resp.status_code == 200
+    session = resp.json()["sessions"][0]
+    titles = {finding["title"] for finding in session["findings"]}
+    assert "Deprecated TLS version negotiated" in titles
+    assert "Critically weak cipher suite negotiated" in titles
+    assert session["risk_level"] == "CRITICAL"
+    assert session["posture_score"] < 100
+
+
+def test_sessions_endpoint_reports_no_protocol_or_cipher_findings_for_safe_session(dataset_dir):
+    """File 03 is "safe" for TLS version/cipher/key-exchange, but genny.py's certificate
+    generator makes its leaf self-signed by default (see test_certificates.py) - so the
+    only finding here should come from the certificate layer, not protocol/cipher/key_exchange.
+    """
+    pcap = dataset_dir / "03_tls12_ecdhe_rsa_safe.pcap"
+
+    with open(pcap, "rb") as f:
+        resp = client.post(
+            "/api/pcap/sessions",
+            files={"file": (pcap.name, f, "application/vnd.tcpdump.pcap")},
+        )
+
+    assert resp.status_code == 200
+    session = resp.json()["sessions"][0]
+    domains = {finding["domain"] for finding in session["findings"]}
+    assert domains == {"certificate"}
+    assert session["posture_score"] == 75
+
+
 def test_sessions_endpoint_rejects_corrupt_file(tmp_path):
     bad_file = tmp_path / "not_a_pcap.bin"
     bad_file.write_bytes(b"this is definitely not a capture" * 10)

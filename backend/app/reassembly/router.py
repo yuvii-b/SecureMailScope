@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from ..certificates.analyzer import analyze_certificate_chain
 from ..ingestion.validator import PcapValidationError, validate_pcap_file
+from ..rules.engine import evaluate_session
 from ..starttls.state_machine import classify as classify_starttls
 from ..tls.handshake import analyze_tls_handshake
 from .reassembler import reassemble_pcap
@@ -58,10 +59,18 @@ async def reassemble_sessions(file: UploadFile = File(...)) -> dict:
             evaluation_time=evaluation_time,
             hostname=tls_info.sni,
         )
+        starttls_dict = starttls_result.to_dict()
+        tls_dict = tls_info.to_dict()
+        certificate_dict = certificate_analysis.to_dict()
+        rule_result = evaluate_session(tls_dict, certificate_dict, starttls_dict)
+
         session_dict = session.to_dict()
-        session_dict["starttls"] = starttls_result.to_dict()
-        session_dict["tls_handshake"] = tls_info.to_dict()
-        session_dict["certificate"] = certificate_analysis.to_dict()
+        session_dict["starttls"] = starttls_dict
+        session_dict["tls_handshake"] = tls_dict
+        session_dict["certificate"] = certificate_dict
+        session_dict["findings"] = [f.to_dict() for f in rule_result.findings]
+        session_dict["posture_score"] = rule_result.posture_score
+        session_dict["risk_level"] = rule_result.risk_level
         session_dicts.append(session_dict)
 
     return {

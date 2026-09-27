@@ -222,9 +222,42 @@ every session.
       `certificate.chain_status: "OBSERVED_VALID"` since its leaf is self-signed) and
       `03_tls12_ecdhe_rsa_safe.pcap` (expect `certificate.hostname_match: true`,
       `certificate.key_length_bits: 2048`).
-- [ ] **Stage 6 — Rule engine.** Deterministic checks producing findings with severity +
-      evidence (see §8 rule matrix). This is the correctness backbone — get this right
-      before touching ML.
+- [x] **Stage 6 — Rule engine.** Deterministic checks implementing the §8 matrix against
+      the `tls_handshake`/`certificate`/`starttls` dicts Stages 4-5 already produce:
+      deprecated TLS 1.0/1.1 and insecure SSLv2/SSLv3 (Protocol), critical ciphers
+      (NULL/RC4/3DES/EXPORT/ANON, matched by name against the negotiated cipher suite)
+      and CBC-mode on TLS 1.2 (Cipher), static RSA with no forward secrecy (Key exchange),
+      self-signed/broken/not-fully-observable chains, expired/not-yet-valid, SHA-1/MD5
+      signatures, and sub-2048-bit RSA keys (Certificate), and STARTTLS
+      plaintext-after-advertisement (Critical). "DH group below configured minimum" is
+      deliberately not implemented — Stage 4's parser only extracts the cipher suite name
+      from ServerHello, not the actual DH parameters from ServerKeyExchange, so the group
+      size isn't observable yet (CLAUDE.md §12: report not observable, never guess). Each
+      `Finding` carries severity/title/evidence/policy_reference/recommendation/domain
+      (`to_dict()` matches §7's JSON contract shape). Severity→score weights and
+      score→risk-level bands are plain config dicts in `backend/app/rules/engine.py`, not
+      inline magic numbers; `risk_level` is the score's band floored by the worst
+      individual finding's severity, so one CRITICAL finding on an otherwise-clean session
+      is never reported as merely "HIGH". Pure functions of the three input dicts — no
+      dependency on the (not-yet-built) ML engine, so it works standalone per §12. Wired
+      into `POST /api/pcap/sessions`'s per-session response as `findings`,
+      `posture_score`, and `risk_level`.
+      **How to test:** `cd backend && python -m pytest -v` (91 tests total; 18 new in
+      `test_rules.py` covering the full matrix against `genny.py` scenarios `01`/`02`
+      (deprecated TLS 1.0/1.1 + RC4/3DES), `05`/`06` (NULL/DH-anon ciphers), `03`/`07`
+      (safe sessions produce no protocol/cipher/key-exchange findings), `08`/`10`–`13`
+      (certificate findings, including the `NOT_OBSERVABLE`-is-informational-not-HIGH
+      distinction), and `14` (STARTTLS stripping); plus synthetic-dict unit tests for the
+      CBC-on-TLS-1.2 rule (no cipher in `genny.py`'s dataset exercises it) and score/
+      risk-level boundary behavior; 2 new API tests in `test_api.py`. To sanity-check by
+      hand: `uvicorn app.main:app --reload --port 8000`, then
+      `curl -X POST http://127.0.0.1:8000/api/pcap/sessions -F "file=@../securemail_test_pcaps/01_tls10_3des_rsa.pcap"`
+      — expect `risk_level: "CRITICAL"`, `posture_score: 0`, and findings for the
+      deprecated TLS version, the 3DES cipher, static RSA key exchange, and the
+      self-signed leaf. Also try `14_starttls_plaintext_after_advertisement.pcap` (expect
+      a single CRITICAL STARTTLS finding whose `evidence` includes the leaked plaintext
+      IMAP `LOGIN` command — this is a real passive-capture credential leak, not a
+      contrived example).
 - [ ] **Stage 7 — Backend/API.** FastAPI routes implementing the JSON contract (§7);
       Celery job queue for async analysis; PostgreSQL persistence.
 - [ ] **Stage 8 — Dashboard (MVP demo milestone).** Upload → posture score → findings →
