@@ -130,6 +130,8 @@ export function CaptureDashboardPage() {
         </div>
       </div>
 
+      {capture.summary.attack_surface && <AttackSurfacePanel surface={capture.summary.attack_surface} />}
+
       <div className="border border-border bg-panel">
         <div className="px-3 py-2 border-b border-border-soft">
           <span className="text-[11px] font-mono tracking-widest text-text-dim uppercase">
@@ -181,6 +183,68 @@ export function CaptureDashboardPage() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Stage 10: pure aggregation of the capture's sessions into a per-endpoint view
+// (backend/app/attack_surface/mapper.py) - nested in summary, no schema change needed.
+function AttackSurfacePanel({ surface }) {
+  return (
+    <div className="border border-border bg-panel">
+      <div className="px-3 py-2 border-b border-border-soft flex items-center justify-between flex-wrap gap-2">
+        <span className="text-[11px] font-mono tracking-widest text-text-dim uppercase">
+          Attack Surface ({surface.distinct_endpoints} endpoint{surface.distinct_endpoints === 1 ? "" : "s"})
+        </span>
+        <div className="flex items-center gap-3 text-[10px] font-mono text-text-faint">
+          {surface.endpoints_with_deprecated_tls.length > 0 && (
+            <span className="text-sev-high">
+              {surface.endpoints_with_deprecated_tls.length} deprecated-TLS endpoint
+              {surface.endpoints_with_deprecated_tls.length === 1 ? "" : "s"}
+            </span>
+          )}
+          {surface.endpoints_with_plaintext_after_starttls.length > 0 && (
+            <span className="text-sev-critical">
+              {surface.endpoints_with_plaintext_after_starttls.length} STARTTLS-stripped endpoint
+              {surface.endpoints_with_plaintext_after_starttls.length === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      </div>
+      <table className="w-full text-[12px] font-mono border-collapse">
+        <thead>
+          <tr className="text-text-faint text-left border-b border-border-soft uppercase text-[10px] tracking-wider">
+            <th className="px-3 py-1.5 font-medium">Endpoint</th>
+            <th className="px-3 py-1.5 font-medium">Protocols</th>
+            <th className="px-3 py-1.5 font-medium">Sessions</th>
+            <th className="px-3 py-1.5 font-medium">Worst Risk</th>
+            <th className="px-3 py-1.5 font-medium">Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          {surface.endpoints.map((e) => {
+            const key = `${e.server_ip}:${e.server_port}`;
+            return (
+              <tr key={key} className="border-b border-border-soft last:border-b-0">
+                <td className="px-3 py-1.5 text-text-dim">{key}</td>
+                <td className="px-3 py-1.5 text-text-dim">{e.protocols_observed.join(", ")}</td>
+                <td className="px-3 py-1.5 text-text-dim">{e.session_count}</td>
+                <td className="px-3 py-1.5">
+                  <SeverityBadge severity={e.worst_risk_level} />
+                </td>
+                <td className="px-3 py-1.5 text-[10px] text-text-faint">
+                  {surface.endpoints_with_deprecated_tls.includes(key) && (
+                    <span className="text-sev-high mr-2">deprecated TLS</span>
+                  )}
+                  {surface.endpoints_with_plaintext_after_starttls.includes(key) && (
+                    <span className="text-sev-critical">STARTTLS stripped</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -7,6 +7,7 @@
 // the frontend is served from a different origin than the API (see docker-compose.yml).
 const API_ORIGIN = import.meta.env.VITE_API_BASE_URL ?? "";
 const BASE = `${API_ORIGIN}/api/analyses`;
+const SIMULATOR_BASE = `${API_ORIGIN}/api/simulator`;
 
 async function handle(res) {
   if (!res.ok) {
@@ -34,4 +35,18 @@ export function uploadCapture(file) {
   const form = new FormData();
   form.append("file", file);
   return fetch(BASE, { method: "POST", body: form }).then(handle);
+}
+
+// Stage 10: what-if remediation simulator (mounted at a separate /api/simulator prefix -
+// see backend/app/simulator/router.py - not nested under /api/analyses).
+export function getRemediationCatalog() {
+  return fetch(`${SIMULATOR_BASE}/remediations`).then(handle);
+}
+
+export function simulateRemediation(captureId, sessionId, remediationIds) {
+  return fetch(`${SIMULATOR_BASE}/${captureId}/sessions/${sessionId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ remediations: remediationIds }),
+  }).then(handle);
 }

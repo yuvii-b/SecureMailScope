@@ -1,17 +1,26 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getCapture } from "../api/client";
+import { RemediationSimulator } from "../components/RemediationSimulator";
 import { SeverityBadge } from "../components/SeverityBadge";
+
+const DRIFT_STATUS_TONE = {
+  NO_BASELINE: "text-text-faint",
+  NO_DRIFT: "text-sev-ok",
+  DRIFT_DETECTED: "text-sev-high",
+};
 
 function Field({ label, value }) {
   const display =
     value === null || value === undefined
       ? "—"
-      : typeof value === "boolean"
+      : typeof value === "object"
         ? value
-          ? "true"
-          : "false"
-        : String(value);
+        : typeof value === "boolean"
+          ? value
+            ? "true"
+            : "false"
+          : String(value);
   return (
     <div className="flex justify-between gap-4 py-1 border-b border-border-soft last:border-b-0">
       <span className="text-text-faint text-[11px] uppercase tracking-wider">{label}</span>
@@ -52,7 +61,14 @@ export function SessionDetailPage() {
   const session = capture.sessions.find((s) => s.session_id === sessionId);
   if (!session) return <div className="p-4 text-sev-critical font-mono text-[12px]">session not found</div>;
 
-  const { starttls_negotiation: sn, tls_handshake: tls, certificate: cert } = session;
+  const {
+    starttls_negotiation: sn,
+    tls_handshake: tls,
+    certificate: cert,
+    ai_analysis: ai,
+    crypto_fingerprint: fp,
+    drift,
+  } = session;
 
   return (
     <div className="p-4 max-w-[1400px] w-full mx-auto flex flex-col gap-4">
@@ -115,6 +131,82 @@ export function SessionDetailPage() {
         </Panel>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Panel title="Crypto Fingerprint">
+          <Field label="observable" value={fp?.observable} />
+          <Field label="fingerprint id" value={fp?.fingerprint_id} />
+          {fp?.observable && (
+            <>
+              <Field label="tls version" value={fp.components.tls_version} />
+              <Field label="key exchange" value={fp.components.key_exchange} />
+              <Field label="cipher suite" value={fp.components.cipher_suite} />
+              <Field label="cert key algorithm" value={fp.components.certificate_key_algorithm} />
+              <Field label="cert key length" value={fp.components.certificate_key_length_bits} />
+            </>
+          )}
+        </Panel>
+
+        <Panel title="Config / Certificate Drift">
+          {drift ? (
+            <>
+              <Field
+                label="status"
+                value={<span className={DRIFT_STATUS_TONE[drift.status]}>{drift.status}</span>}
+              />
+              {drift.status !== "NO_BASELINE" && (
+                <Field label="baseline session" value={drift.baseline_session_id} />
+              )}
+              {drift.findings.length > 0 && (
+                <div className="flex flex-col gap-1.5 pt-1.5">
+                  {drift.findings.map((f, i) => (
+                    <div key={i} className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <SeverityBadge severity={f.severity} />
+                        <span className="font-mono text-[11px] text-text">{f.title}</span>
+                      </div>
+                      <span className="font-mono text-[10px] text-text-faint pl-0.5">{f.evidence}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="font-mono text-[11px] text-text-faint">not computed (debug endpoint)</span>
+          )}
+        </Panel>
+
+        <Panel title="AI Risk Analysis">
+          {ai ? (
+            <>
+              <Field label="predicted label" value={ai.predicted_label} />
+              <Field label="risk score" value={ai.risk_score?.toFixed?.(1) ?? ai.risk_score} />
+              <Field label="anomaly flag" value={ai.anomaly_flag} />
+              <Field label="anomaly score" value={ai.anomaly_score?.toFixed?.(2) ?? ai.anomaly_score} />
+              {ai.top_contributing_features?.length > 0 && (
+                <div className="flex flex-col gap-1 pt-1.5">
+                  {ai.top_contributing_features.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[11px] text-text truncate">{f.feature}</span>
+                      <span
+                        className={`font-mono text-[10px] shrink-0 ${
+                          f.direction === "increases_risk" ? "text-sev-high" : "text-sev-ok"
+                        }`}
+                      >
+                        {f.direction === "increases_risk" ? "▲" : "▼"} {(f.share_of_explanation * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <span className="font-mono text-[11px] text-text-faint">
+              unavailable (ML models not trained for this session)
+            </span>
+          )}
+        </Panel>
+      </div>
+
       {(tls.alerts.length > 0 || tls.notes.length > 0 || cert.notes.length > 0) && (
         <Panel title="Notes / Alerts">
           <div className="flex flex-col gap-1 py-1 text-[12px] font-mono text-text-dim">
@@ -158,11 +250,18 @@ export function SessionDetailPage() {
                 <div className="text-[11px] font-mono text-sev-ok pl-0.5">
                   <span className="text-text-faint">recommendation:</span> {f.recommendation}
                 </div>
+                {f.evidence_path && (
+                  <div className="text-[11px] font-mono text-accent-dim pl-0.5">
+                    <span className="text-text-faint">source:</span> {f.evidence_path}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <RemediationSimulator captureId={captureId} sessionId={session.session_id} />
     </div>
   );
 }
