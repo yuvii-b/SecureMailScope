@@ -78,6 +78,10 @@ class SessionRecord(Base):
     posture_score: Mapped[float] = mapped_column(Float)
     risk_level: Mapped[str] = mapped_column(String(16))
     ai_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Stage 10: both purely additive/nullable, so existing rows and code paths that don't
+    # set them (e.g. the synchronous debug endpoint) are unaffected.
+    crypto_fingerprint: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    drift: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     capture: Mapped["Capture"] = relationship(back_populates="sessions")
 
@@ -91,6 +95,8 @@ class SessionRecord(Base):
             "tls_handshake": self.tls_handshake,
             "certificate": self.certificate,
             "ai_analysis": self.ai_analysis,
+            "crypto_fingerprint": self.crypto_fingerprint,
+            "drift": self.drift,
             "findings": self.findings,
             "posture_score": self.posture_score,
             "risk_level": self.risk_level,

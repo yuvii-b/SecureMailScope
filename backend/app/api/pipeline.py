@@ -10,7 +10,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..attack_surface.mapper import build_attack_surface
 from ..certificates.analyzer import analyze_certificate_chain
+from ..fingerprint.fingerprint import compute_fingerprint
 from ..ml.inference import analyze as analyze_ml
 from ..reassembly.reassembler import reassemble_pcap
 from ..rules.engine import evaluate_session
@@ -45,6 +47,9 @@ def analyze_session(session) -> dict:
     # Stage 9: purely additive - falls back to None if the models haven't been trained
     # yet, so the rule engine above keeps working standalone either way (CLAUDE.md §12).
     ai_analysis = analyze_ml(session, tls_dict, certificate_dict, starttls_dict)
+    # Stage 10: also purely additive and DB-free - combines this session's crypto posture
+    # into one comparable ID; drift detection (worker.py) uses it as a cheap pre-check.
+    crypto_fingerprint = compute_fingerprint(tls_dict, certificate_dict).to_dict()
 
     return {
         "starttls": starttls_dict,
@@ -54,6 +59,7 @@ def analyze_session(session) -> dict:
         "posture_score": rule_result.posture_score,
         "risk_level": rule_result.risk_level,
         "ai_analysis": ai_analysis,
+        "crypto_fingerprint": crypto_fingerprint,
     }
 
 
@@ -83,6 +89,7 @@ def analyze_pcap_file(path: Path, filename: str) -> dict:
             "tls_handshake": analysis["tls_handshake"],
             "certificate": analysis["certificate"],
             "ai_analysis": analysis["ai_analysis"],
+            "crypto_fingerprint": analysis["crypto_fingerprint"],
             "findings": analysis["findings"],
             "posture_score": analysis["posture_score"],
             "risk_level": analysis["risk_level"],
@@ -99,6 +106,9 @@ def analyze_pcap_file(path: Path, filename: str) -> dict:
             "total_sessions_analyzed": len(sessions),
             "overall_health_score": overall_health_score,
             "risk_level": _overall_risk_level(risk_levels),
+            # Stage 10: purely additive, aggregated from session_dicts already built
+            # above - no new parsing, no DB access (CLAUDE.md §10's attack-surface item).
+            "attack_surface": build_attack_surface(session_dicts),
         },
         "sessions": session_dicts,
     }

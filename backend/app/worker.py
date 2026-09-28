@@ -17,6 +17,7 @@ from pathlib import Path
 from celery import Celery
 
 from .db import SessionLocal, init_db
+from .drift.detector import find_baseline_and_compare
 from .models.analysis import STATUS_COMPLETE, STATUS_FAILED, STATUS_RUNNING, Capture, SessionRecord
 
 BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -54,6 +55,10 @@ def analyze_pcap_task(capture_id: str) -> None:
             return
 
         for session_dict in result["sessions"]:
+            # Stage 10: compare against the most recent prior capture of the same
+            # server_ip/server_port/protocol *before* this session is persisted, so the
+            # lookup never matches the row being inserted right now.
+            drift = find_baseline_and_compare(db, capture_id, session_dict)
             db.add(SessionRecord(
                 capture_id=capture_id,
                 session_id=session_dict["session_id"],
@@ -69,6 +74,8 @@ def analyze_pcap_task(capture_id: str) -> None:
                 posture_score=session_dict["posture_score"],
                 risk_level=session_dict["risk_level"],
                 ai_analysis=session_dict["ai_analysis"],
+                crypto_fingerprint=session_dict["crypto_fingerprint"],
+                drift=drift,
             ))
 
         capture.summary = result["summary"]

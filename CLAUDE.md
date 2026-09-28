@@ -424,9 +424,105 @@ every session.
       followed by `curl http://127.0.0.1:8000/api/analyses/<capture_id>` - expect that
       session's `ai_analysis.anomaly_flag: true`, `predicted_label: "anomalous"`, and a
       non-empty `top_contributing_features` list.
-- [ ] **Stage 10 — Novelty (post-MVP).** Cryptographic fingerprinting, config/certificate
-      drift detection, what-if remediation simulator, baseline comparison. Pick 2–3, not
-      all — see priority table in §10.
+- [x] **Stage 10 — Novelty (post-MVP).** All §10 items implemented (explicit user
+      instruction: "implement all," overriding this section's own "pick 2-3" advice).
+      Explainable AI was already satisfied by Stage 9's SHAP output; the four new items
+      below are each a self-contained package under `backend/app/`, wired additively into
+      `api/pipeline.py`/`models/analysis.py`/`worker.py` so none of them can break the
+      Stage 0-9 pipeline if disabled.
+
+      **Cryptographic fingerprint** (`backend/app/fingerprint/fingerprint.py`) — one
+      comparable ID per session: SHA-256 (truncated to 16 hex chars) over a canonical
+      sorted string of `tls_version`, `key_exchange`, `cipher_suite`,
+      `certificate_key_algorithm`, `certificate_key_length_bits`, `certificate_sha256`.
+      `observable: false`/`fingerprint_id: null` when no TLS version was negotiated at
+      all, per §12's "report not observable, never guess." Wired into
+      `pipeline.py::analyze_session()`'s return dict as `crypto_fingerprint`, persisted on
+      `SessionRecord.crypto_fingerprint` (new nullable JSON column).
+
+      **Config/certificate drift detection** (`backend/app/drift/detector.py`) —
+      deliberately *not* in `pipeline.py`, since it needs to query other captures'
+      `SessionRecord`s for the same endpoint and `pipeline.py` is kept DB-free by design
+      (§12). Split into a pure `detect_drift(baseline_tls, baseline_cert,
+      baseline_starttls, current_tls, current_cert, current_starttls)` (unit-testable with
+      plain dicts) and `find_baseline_and_compare(db, capture_id, session_dict)`, which
+      looks up the most recently completed prior capture at the same `server_ip` +
+      `server_port` + `protocol` (SNI isn't always observed, so hostname can't be the key)
+      and calls `detect_drift`. Called from `worker.py` — the one place with both freshly
+      computed session data and DB access — right before each `SessionRecord` is inserted,
+      so a capture never matches itself. Checks: TLS version downgrade (HIGH), forward
+      secrecy lost (HIGH), cipher suite changed (INFO), certificate key length decreased
+      (HIGH), certificate rotated (INFO), STARTTLS enforcement regressed (CRITICAL — e.g.
+      `SUCCESS` → `PLAINTEXT_AFTER_ADVERTISEMENT`). An *improvement* (TLS upgrade, cert
+      renewed to a longer key, STARTTLS newly enforced) is never flagged. Result stored as
+      a new, separate `SessionRecord.drift` JSON column — `status` is `NO_BASELINE` (first
+      time this endpoint has ever been captured), `NO_DRIFT`, or `DRIFT_DETECTED` — never
+      merged into `posture_score`/`risk_level`, mirroring how Stage 9's `ai_analysis` stays
+      additive. `genny.py`'s 22 scenario files each use a distinct synthetic server IP, so
+      there's no natural same-endpoint pair in the fixture dataset to exercise this with;
+      tested with hand-built dicts (`detect_drift`) and directly-inserted
+      `Capture`/`SessionRecord` rows sharing an endpoint (`find_baseline_and_compare`),
+      following the same "hand-stitched" pattern `test_certificates.py` already uses for
+      the `INVALID`-chain case genny.py doesn't produce either.
+
+      **What-if remediation simulator** (`backend/app/simulator/remediation.py` +
+      `router.py`) — a catalog of 7 atomic pure patch functions (`upgrade_tls_version`,
+      `remove_weak_cipher`, `enable_forward_secrecy`, `renew_certificate`,
+      `reissue_certificate_strong_key`, `replace_self_signed_with_ca_issued`,
+      `enforce_starttls`) that mutate deep-copied `tls_handshake`/`certificate`/`starttls`
+      dicts. `simulate_remediation()` reruns the same `rules.engine.evaluate_session()`
+      used for real analysis before and after applying the requested patches and diffs
+      findings by title into `findings_resolved`/`findings_remaining`/
+      `findings_newly_introduced`, plus `posture_score_delta`. Never contacts a real mail
+      server and never mutates the stored session — purely "what would the deterministic
+      rule engine say about a hypothetically-patched config" (§12). Mounted at a
+      **separate** `/api/simulator` prefix rather than nested under `/api/analyses`,
+      specifically to avoid a FastAPI route collision with the existing catch-all
+      `GET /api/analyses/{capture_id}`.
+
+      **Attack-surface map** — nested into the existing `summary` dict as
+      `summary.attack_surface` (`backend/app/attack_surface/mapper.py`, called from
+      `pipeline.py::analyze_pcap_file()`; no schema change needed, since `summary` was
+      already a flexible JSON column). Pure aggregation of the capture's already-computed
+      per-session dicts into: distinct endpoints (by `server_ip:server_port`), protocol
+      counts, findings-by-severity across the whole capture, worst risk level per
+      endpoint, and endpoints flagged for deprecated TLS or STARTTLS-stripped plaintext.
+
+      **Evidence-linked findings (strengthened)** — `rules.engine.Finding` gained an
+      `evidence_path: Optional[str]` field (e.g. `"tls_handshake.version_negotiated"`,
+      `"certificate.key_length_bits"`), populated at all 11 finding-construction sites
+      across the rule engine plus all 6 in the new drift detector, so a UI can link a
+      finding straight to the exact contract field/session/handshake value it came from,
+      not just a prose evidence string.
+
+      Stage 10 work is backend-only — confirmed via grep that Stage 9's own
+      `ai_analysis` field isn't rendered anywhere in `frontend/src/pages/`, establishing
+      that new pipeline output fields don't require immediate frontend wiring in this
+      project; the new fields are available over the API for whenever frontend work
+      resumes.
+      **How to test:** `cd backend && python -m pytest -v` (158 tests total; 5 new in
+      `test_fingerprint.py`, 6 new in `test_attack_surface.py`, 11 new in `test_drift.py`
+      (8 unit tests for `detect_drift` covering every check plus the "improvement is not
+      flagged" cases, 3 DB-level tests for `find_baseline_and_compare`), 10 new in
+      `test_simulator.py` (one per catalog remediation plus the unknown-id error path,
+      combining remediations, and unrelated findings surviving), and 6 new assertions/
+      tests added to `test_analysis_api.py` (crypto_fingerprint/drift/attack_surface
+      populated end-to-end, a second upload of the same pcap producing `NO_DRIFT` against
+      its own first upload as baseline, the simulator's `GET /api/simulator/remediations`
+      catalog endpoint, and `POST /api/simulator/{capture_id}/sessions/{session_id}`
+      against a real persisted session). To sanity-check by hand:
+      `uvicorn app.main:app --reload --port 8000`, then
+      `curl -X POST http://127.0.0.1:8000/api/analyses -F "file=@../securemail_test_pcaps/01_tls10_3des_rsa.pcap"`
+      twice in a row (same file) — the second capture's session should come back with
+      `drift.status: "NO_DRIFT"` (identical config to the first upload) and both should
+      have identical `crypto_fingerprint.fingerprint_id`. Then
+      `curl http://127.0.0.1:8000/api/simulator/remediations` lists all 7 remediations,
+      and
+      `curl -X POST http://127.0.0.1:8000/api/simulator/<capture_id>/sessions/<session_id> -H "Content-Type: application/json" -d "{\"remediations\": [\"upgrade_tls_version\", \"remove_weak_cipher\"]}"`
+      against that session returns `after.posture_score` higher than `before.posture_score`
+      with `findings_resolved` including "Deprecated TLS version negotiated". Also check
+      `result["summary"]["attack_surface"]["distinct_endpoints"]` is populated on any
+      `GET /api/analyses/<capture_id>`.
 - [ ] **Stage 11 — Reports.** JSON (always), plus PDF and/or HTML (at minimum one
       human-readable format if time is tight) via Jinja2 + WeasyPrint.
 - [ ] **Stage 12 — Integration + demo hardening.** Full run against every `genny.py`

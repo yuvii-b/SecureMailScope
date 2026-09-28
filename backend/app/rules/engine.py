@@ -20,6 +20,7 @@ would violate CLAUDE.md §12's "report not observable, never assume" rule.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 SEVERITY_CRITICAL = "CRITICAL"
 SEVERITY_HIGH = "HIGH"
@@ -78,6 +79,11 @@ class Finding:
     policy_reference: str
     recommendation: str
     domain: str
+    # Stage 10: JSON-pointer-style path into the session contract (§7) that this finding
+    # was derived from - e.g. "tls_handshake.version_negotiated" - so a UI can link a
+    # finding straight to the evidence field/session/handshake value it came from
+    # (CLAUDE.md §10's "evidence-linked findings" item) rather than only a prose string.
+    evidence_path: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -87,6 +93,7 @@ class Finding:
             "policy_reference": self.policy_reference,
             "recommendation": self.recommendation,
             "domain": self.domain,
+            "evidence_path": self.evidence_path,
         }
 
 
@@ -118,6 +125,7 @@ def _check_protocol_version(tls: dict) -> list[Finding]:
             recommendation="Disable SSLv2/SSLv3 support on this endpoint entirely; "
                             "require TLS 1.2 or newer.",
             domain="protocol",
+            evidence_path="tls_handshake.version_negotiated",
         )]
 
     policy = _DEPRECATED_TLS_VERSION_POLICY.get(version)
@@ -129,6 +137,7 @@ def _check_protocol_version(tls: dict) -> list[Finding]:
             policy_reference=policy,
             recommendation="Disable TLS 1.0/1.1 on this endpoint; require TLS 1.2 or newer.",
             domain="protocol",
+            evidence_path="tls_handshake.version_negotiated",
         )]
     return []
 
@@ -149,6 +158,7 @@ def _check_cipher(tls: dict) -> list[Finding]:
             recommendation="Remove this cipher suite from the server's configuration; "
                             "it provides no meaningful confidentiality and/or authentication.",
             domain="cipher",
+            evidence_path="tls_handshake.cipher_suite_selected",
         )]
 
     if tls.get("version_negotiated") == "TLS 1.2" and "CBC" in upper:
@@ -160,6 +170,7 @@ def _check_cipher(tls: dict) -> list[Finding]:
             recommendation="Prefer an AEAD cipher suite (e.g. AES-GCM or ChaCha20-Poly1305) "
                             "over CBC-mode on TLS 1.2 to avoid padding-oracle-style attacks.",
             domain="cipher",
+            evidence_path="tls_handshake.cipher_suite_selected",
         )]
     return []
 
@@ -176,6 +187,7 @@ def _check_key_exchange(tls: dict) -> list[Finding]:
                             "later-compromised private key cannot retroactively decrypt "
                             "captured traffic.",
             domain="key_exchange",
+            evidence_path="tls_handshake.forward_secrecy",
         )]
     return []
 
@@ -194,6 +206,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             recommendation="Replace with a certificate issued by a trusted CA, or "
                             "explicitly distribute/pin this root to trusting clients.",
             domain="certificate",
+            evidence_path="certificate.self_signed",
         ))
 
     if cert.get("chain_status") == "INVALID":
@@ -205,6 +218,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             recommendation="Investigate the certificate chain configuration; a broken "
                             "chain is rejected or silently mistrusted by many clients.",
             domain="certificate",
+            evidence_path="certificate.chain_status",
         ))
     elif cert.get("chain_status") == "NOT_OBSERVABLE" and not cert.get("self_signed"):
         findings.append(Finding(
@@ -216,6 +230,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             recommendation="Capture additional handshake traffic, or verify server-side "
                             "that intermediate certificates are configured to be sent to clients.",
             domain="certificate",
+            evidence_path="certificate.chain_status",
         ))
 
     if cert.get("expired"):
@@ -226,6 +241,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             policy_reference="RFC 5280",
             recommendation="Renew the certificate immediately.",
             domain="certificate",
+            evidence_path="certificate.expired",
         ))
     if cert.get("not_yet_valid"):
         findings.append(Finding(
@@ -236,6 +252,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             recommendation="Correct the certificate's validity window or the server/client "
                             "clock skew.",
             domain="certificate",
+            evidence_path="certificate.not_yet_valid",
         ))
 
     sig_algo = (cert.get("signature_algorithm") or "").upper()
@@ -247,6 +264,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             policy_reference="RFC 5280",
             recommendation="Re-issue the certificate signed with SHA-256 or stronger.",
             domain="certificate",
+            evidence_path="certificate.signature_algorithm",
         ))
 
     if cert.get("key_algorithm") == "RSA" and (cert.get("key_length_bits") or 0) < _MIN_RSA_KEY_LENGTH_BITS:
@@ -258,6 +276,7 @@ def _check_certificate(cert: dict) -> list[Finding]:
             recommendation=f"Re-issue the certificate with an RSA key of at least "
                             f"{_MIN_RSA_KEY_LENGTH_BITS} bits.",
             domain="certificate",
+            evidence_path="certificate.key_length_bits",
         ))
     return findings
 
@@ -273,6 +292,7 @@ def _check_starttls(starttls: dict) -> list[Finding]:
                             "STARTTLS/STLS) instead of opportunistic upgrade; this is a "
                             "classic STARTTLS-injection/stripping vector.",
             domain="starttls",
+            evidence_path="starttls_negotiation.status",
         )]
     return []
 
