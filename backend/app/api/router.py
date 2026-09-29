@@ -17,7 +17,7 @@ from ..db import get_db
 from ..ingestion.validator import PcapValidationError, validate_pcap_file
 from ..models.analysis import Capture, SessionRecord
 from ..worker import UPLOAD_DIR, analyze_pcap_task
-from .pipeline import SCHEMA_VERSION
+from .contract import build_contract
 
 router = APIRouter(prefix="/api/analyses", tags=["analyses"])
 
@@ -77,10 +77,4 @@ def get_analysis(capture_id: str, db: DBSession = Depends(get_db)) -> dict:
         .order_by(SessionRecord.id)
         .all()
     )
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "capture_id": capture.id,
-        "status": capture.status,
-        "summary": capture.summary,
-        "sessions": [s.to_dict() for s in sessions],
-    }
+    return build_contract(capture, sessions)

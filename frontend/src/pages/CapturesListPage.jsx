@@ -4,6 +4,7 @@ import { listCaptures } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { UploadPanel } from "../components/UploadPanel";
+import { DemoPanel } from "../components/DemoPanel";
 
 function formatTime(iso) {
   if (!iso) return "—";
@@ -31,6 +32,7 @@ export function CapturesListPage() {
   return (
     <div className="flex-1 flex flex-col p-4 gap-4 max-w-[1400px] w-full mx-auto">
       <UploadPanel onUploaded={(id) => navigate(`/captures/${id}`)} />
+      <DemoPanel onUploaded={(id) => navigate(`/captures/${id}`)} />
 
       {error && <div className="text-sev-critical font-mono text-[12px]">{error}</div>}
 

@@ -50,3 +50,10 @@ export function simulateRemediation(captureId, sessionId, remediationIds) {
     body: JSON.stringify({ remediations: remediationIds }),
   }).then(handle);
 }
+
+// Stage 11: report export - these are plain URLs for an <a href download> link, not
+// fetch() calls, so the browser handles the Content-Disposition: attachment response
+// itself instead of us pulling the bytes through JS just to hand them back.
+export function getReportUrl(captureId, format) {
+  return `${BASE}/${captureId}/report.${format}`;
+}
