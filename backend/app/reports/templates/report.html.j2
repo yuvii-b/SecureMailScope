@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SecureMailScope Report — {{ summary.capture_file }}</title>
+<style>
+  :root {
+    --sev-critical: #c72330;
+    --sev-high: #c26a1a;
+    --sev-medium: #a6871f;
+    --sev-low: #2a6bb0;
+    --sev-info: #5a6472;
+    --ink: #1a1f29;
+    --ink-dim: #4a5568;
+    --border: #d6dbe3;
+    --panel: #f6f7f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "DejaVu Sans", Arial, sans-serif;
+    color: var(--ink);
+    font-size: 10.5pt;
+    margin: 0;
+  }
+  @page {
+    size: A4;
+    margin: 20mm 16mm;
+    @bottom-center {
+      content: "SecureMailScope — page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: var(--ink-dim);
+    }
+  }
+  h1, h2, h3 { margin: 0 0 4mm 0; font-family: "DejaVu Sans", Arial, sans-serif; }
+  h1 { font-size: 18pt; }
+  h2 { font-size: 13pt; margin-top: 8mm; border-bottom: 1pt solid var(--border); padding-bottom: 2mm; }
+  h3 { font-size: 11pt; }
+  .mono { font-family: "DejaVu Sans Mono", monospace; }
+  .cover { margin-bottom: 10mm; }
+  .cover .subtitle { color: var(--ink-dim); font-size: 10pt; }
+  .cover .meta { margin-top: 4mm; font-size: 9pt; color: var(--ink-dim); }
+  .cover .meta span { margin-right: 8mm; }
+
+  .summary-grid { display: table; width: 100%; border-collapse: collapse; margin-top: 4mm; }
+  .summary-cell {
+    display: table-cell;
+    width: 33%;
+    border: 1pt solid var(--border);
+    padding: 4mm;
+    vertical-align: top;
+  }
+  .summary-cell .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-dim); }
+  .summary-cell .value { font-size: 16pt; margin-top: 2mm; }
+
+  .badge {
+    display: inline-block;
+    padding: 0.5mm 2.5mm;
+    border-radius: 1mm;
+    font-size: 8pt;
+    font-weight: bold;
+    color: #fff;
+  }
+  .badge-CRITICAL { background: var(--sev-critical); }
+  .badge-HIGH { background: var(--sev-high); }
+  .badge-MEDIUM { background: var(--sev-medium); }
+  .badge-LOW { background: var(--sev-low); }
+  .badge-INFO { background: var(--sev-info); }
+
+  table.data { width: 100%; border-collapse: collapse; margin-top: 3mm; font-size: 9pt; }
+  table.data th, table.data td { border: 1pt solid var(--border); padding: 1.5mm 2.5mm; text-align: left; vertical-align: top; }
+  table.data th { background: var(--panel); font-size: 8pt; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-dim); }
+
+  .kv { width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 9pt; }
+  .kv td { padding: 1mm 2mm; vertical-align: top; }
+  .kv td.k { width: 42%; color: var(--ink-dim); }
+
+  .session {
+    border: 1pt solid var(--border);
+    padding: 4mm;
+    margin-top: 5mm;
+    page-break-inside: avoid;
+  }
+  .session-header { display: table; width: 100%; margin-bottom: 3mm; }
+  .session-header .id { display: table-cell; font-size: 12pt; }
+  .session-header .risk { display: table-cell; text-align: right; }
+
+  .subsection-grid { display: table; width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 3mm 0; }
+  .subsection { display: table-cell; width: 33%; vertical-align: top; border: 1pt solid var(--border); padding: 3mm; }
+  .subsection h3 { font-size: 9.5pt; margin-bottom: 1mm; }
+
+  .no-findings { color: var(--ink-dim); font-style: italic; margin-top: 3mm; }
+  .footnote { color: var(--ink-dim); font-size: 8pt; margin-top: 2mm; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>SecureMailScope — Security Posture Report</h1>
+  <div class="subtitle">Passive network forensic analysis of SMTP/IMAP/POP3 TLS traffic</div>
+  <div class="meta mono">
+    <span>capture: {{ summary.capture_file }}</span>
+    <span>capture_id: {{ capture_id }}</span>
+    <span>schema: {{ schema_version }}</span>
+  </div>
+  <div class="meta mono">
+    <span>analyzed: {{ completed_at or "—" }}</span>
+    <span>report generated: {{ generated_at }}</span>
+  </div>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-cell">
+    <div class="label">Overall posture score</div>
+    <div class="value">{{ "%.1f"|format(summary.overall_health_score) }} / 100</div>
+  </div>
+  <div class="summary-cell">
+    <div class="label">Overall risk level</div>
+    <div class="value"><span class="badge badge-{{ summary.risk_level }}">{{ summary.risk_level }}</span></div>
+  </div>
+  <div class="summary-cell">
+    <div class="label">Sessions analyzed</div>
+    <div class="value">{{ summary.total_sessions_analyzed }}</div>
+  </div>
+</div>
+
+{% if summary.attack_surface %}
+{% set surface = summary.attack_surface %}
+<h2>Attack Surface</h2>
+<table class="data">
+  <thead>
+    <tr>
+      <th>Endpoint</th>
+      <th>Protocols</th>
+      <th>Sessions</th>
+      <th>Worst Risk</th>
+      <th>Flags</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in surface.endpoints %}
+    {% set key = e.server_ip ~ ":" ~ e.server_port %}
+    <tr>
+      <td class="mono">{{ key }}</td>
+      <td class="mono">{{ e.protocols_observed|join(", ") }}</td>
+      <td>{{ e.session_count }}</td>
+      <td><span class="badge badge-{{ e.worst_risk_level }}">{{ e.worst_risk_level }}</span></td>
+      <td>
+        {% if key in surface.endpoints_with_deprecated_tls %}deprecated TLS{% endif %}
+        {% if key in surface.endpoints_with_plaintext_after_starttls %}{% if key in surface.endpoints_with_deprecated_tls %}, {% endif %}STARTTLS stripped{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="footnote">
+  Findings across capture:
+  {% for sev, count in summary.attack_surface.findings_by_severity.items() %}{% if count %}<span class="badge badge-{{ sev }}">{{ sev }} {{ count }}</span> {% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<h2>Sessions</h2>
+{% for session in sessions %}
+<div class="session">
+  <div class="session-header">
+    <div class="id mono"><strong>{{ session.session_id }}</strong> — {{ session.protocol }}</div>
+    <div class="risk">
+      <span class="badge badge-{{ session.risk_level }}">{{ session.risk_level }}</span>
+      <span class="mono"> score {{ "%.0f"|format(session.posture_score) }}</span>
+    </div>
+  </div>
+  <div class="mono footnote">
+    client {{ session.client.ip }}:{{ session.client.port }} &rarr; server {{ session.server.ip }}:{{ session.server.port }}
+  </div>
+
+  <div class="subsection-grid">
+    <div class="subsection">
+      <h3>STARTTLS</h3>
+      <table class="kv">
+        <tr><td class="k">Status</td><td class="mono">{{ session.starttls_negotiation.status }}</td></tr>
+        <tr><td class="k">Command detected</td><td>{{ session.starttls_negotiation.command_detected }}</td></tr>
+        <tr><td class="k">Evidence</td><td class="mono">{{ session.starttls_negotiation.evidence or "—" }}</td></tr>
+      </table>
+    </div>
+    <div class="subsection">
+      <h3>TLS Handshake</h3>
+      <table class="kv">
+        <tr><td class="k">Version</td><td class="mono">{{ session.tls_handshake.version_negotiated or "not observed" }}</td></tr>
+        <tr><td class="k">Cipher suite</td><td class="mono">{{ session.tls_handshake.cipher_suite_selected or "—" }}</td></tr>
+        <tr><td class="k">Key exchange</td><td class="mono">{{ session.tls_handshake.key_exchange or "—" }}</td></tr>
+        <tr><td class="k">Forward secrecy</td><td>{{ session.tls_handshake.forward_secrecy }}</td></tr>
+        <tr><td class="k">SNI</td><td class="mono">{{ session.tls_handshake.sni or "—" }}</td></tr>
+      </table>
+    </div>
+    <div class="subsection">
+      <h3>Certificate</h3>
+      {% if session.certificate.subject %}
+      <table class="kv">
+        <tr><td class="k">Subject</td><td class="mono">{{ session.certificate.subject }}</td></tr>
+        <tr><td class="k">Issuer</td><td class="mono">{{ session.certificate.issuer }}</td></tr>
+        <tr><td class="k">Key</td><td class="mono">{{ session.certificate.key_algorithm }} {{ session.certificate.key_length_bits }}-bit</td></tr>
+        <tr><td class="k">Signature</td><td class="mono">{{ session.certificate.signature_algorithm }}</td></tr>
+        <tr><td class="k">Chain</td><td class="mono">{{ session.certificate.chain_status }}</td></tr>
+        <tr><td class="k">Expired</td><td>{{ session.certificate.expired }}</td></tr>
+      </table>
+      {% else %}
+      <div class="no-findings">No certificate observed.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if session.ai_analysis or session.crypto_fingerprint or session.drift %}
+  <div class="subsection-grid" style="margin-top: 3mm;">
+    <div class="subsection">
+      <h3>AI Risk Analysis</h3>
+      {% if session.ai_analysis %}
+      <table class="kv">
+        <tr><td class="k">Predicted label</td><td class="mono">{{ session.ai_analysis.predicted_label }}</td></tr>
+        <tr><td class="k">Risk score</td><td>{{ "%.1f"|format(session.ai_analysis.risk_score) }} / 100</td></tr>
+        <tr><td class="k">Anomaly flag</td><td>{{ session.ai_analysis.anomaly_flag }}</td></tr>
+      </table>
+      {% if session.ai_analysis.top_contributing_features %}
+      <div class="footnote">Top contributing features:
+        {% for feat in session.ai_analysis.top_contributing_features[:3] %}{{ feat.feature }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="no-findings">Not available.</div>
+      {% endif %}
+    </div>
+    <div class="subsection">
+      <h3>Crypto Fingerprint</h3>
+      {% if session.crypto_fingerprint and session.crypto_fingerprint.observable %}
+      <table class="kv">
+        <tr><td class="k">Fingerprint ID</td><td class="mono">{{ session.crypto_fingerprint.fingerprint_id }}</td></tr>
+      </table>
+      {% else %}
+      <div class="no-findings">Not observable.</div>
+      {% endif %}
+    </div>
+    <div class="subsection">
+      <h3>Configuration Drift</h3>
+      {% if session.drift %}
+      <table class="kv">
+        <tr><td class="k">Status</td><td class="mono">{{ session.drift.status }}</td></tr>
+        {% if session.drift.baseline_capture_id %}
+        <tr><td class="k">Baseline</td><td class="mono">{{ session.drift.baseline_session_id }}</td></tr>
+        {% endif %}
+        {% if session.drift.findings %}
+        <tr><td class="k">Changes</td><td>{{ session.drift.findings|length }}</td></tr>
+        {% endif %}
+      </table>
+      {% else %}
+      <div class="no-findings">Not evaluated.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <h3 style="margin-top: 4mm;">Findings ({{ session.findings|length }})</h3>
+  {% if session.findings %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Title</th>
+        <th>Evidence</th>
+        <th>Policy</th>
+        <th>Recommendation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {# findings arrive pre-sorted CRITICAL-first by rules.engine.evaluate_session #}
+      {% for f in session.findings %}
+      <tr>
+        <td><span class="badge badge-{{ f.severity }}">{{ f.severity }}</span></td>
+        <td>{{ f.title }}</td>
+        <td class="mono">{{ f.evidence }}</td>
+        <td class="mono">{{ f.policy_reference }}</td>
+        <td>{{ f.recommendation }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="no-findings">No findings for this session.</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+</body>
+</html>

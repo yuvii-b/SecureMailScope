@@ -33,7 +33,11 @@ SESSION_LABEL_OVERRIDES = {
 }
 
 
-def _label_by_file(dataset_dir: Path) -> dict:
+def label_by_file(dataset_dir: Path) -> dict:
+    """Filename -> manifest ground-truth label. Public: also used by Stage 12's
+    `scripts/demo_metrics.py` to score `ai_analysis.predicted_label` against the same
+    ground truth this dataset was labeled with.
+    """
     manifest = json.loads((dataset_dir / "test_manifest.json").read_text())
     return {case["filename"]: case["label"] for case in manifest["cases"]}
 
@@ -42,7 +46,7 @@ def build_dataset(dataset_dir: Path) -> list:
     """Returns one record per reconstructed session across every `genny.py` pcap file:
     `{filename, session_index, protocol, label, features}`.
     """
-    labels_by_file = _label_by_file(dataset_dir)
+    labels_by_file = label_by_file(dataset_dir)
     records = []
 
     for pcap_path in sorted(dataset_dir.glob("*.pcap")):

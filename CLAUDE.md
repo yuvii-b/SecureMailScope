@@ -523,10 +523,130 @@ every session.
       with `findings_resolved` including "Deprecated TLS version negotiated". Also check
       `result["summary"]["attack_surface"]["distinct_endpoints"]` is populated on any
       `GET /api/analyses/<capture_id>`.
-- [ ] **Stage 11 — Reports.** JSON (always), plus PDF and/or HTML (at minimum one
-      human-readable format if time is tight) via Jinja2 + WeasyPrint.
-- [ ] **Stage 12 — Integration + demo hardening.** Full run against every `genny.py`
-      scenario, measure metrics (§11), fix edge cases, prepare backup demo assets/video.
+- [x] **Stage 11 — Reports.** JSON (always the frozen §7 contract), plus HTML and PDF via
+      Jinja2 + WeasyPrint. New `backend/app/reports/` package, mounted additively under
+      the existing `/api/analyses` prefix rather than a separate one (unlike Stage 10's
+      simulator, there's no route-collision risk here since `/{capture_id}/report.json`
+      etc. don't clash with `GET /api/analyses/{capture_id}`): `GET
+      /api/analyses/{capture_id}/report.json`, `.../report.html`, `.../report.pdf`. All
+      three render from the exact same dict - `backend/app/api/contract.py`'s new
+      `build_contract()` (factored out of `api/router.py::get_analysis`, which now calls
+      it too, so the live dashboard endpoint and the report can never show two different
+      shapes of "the completed analysis") plus two report-only metadata fields
+      (`completed_at`, `generated_at`). JSON is that dict verbatim, served with a
+      `Content-Disposition: attachment` header for a real download instead of the
+      dashboard's inline fetch; HTML and PDF both render through one Jinja2 template
+      (`reports/templates/report.html.j2`) — PDF is HTML-to-PDF via WeasyPrint rather than
+      a second hand-built layout, so there's one template to keep in sync with the
+      contract, not two. All three routes 404 for an unknown `capture_id` and 409 if the
+      capture exists but isn't `COMPLETE` yet (no partial report).
+
+      The template covers everything the JSON contract carries: capture summary + attack
+      surface, then per session the STARTTLS/TLS/certificate panels, the Stage 9 AI
+      analysis and Stage 10 crypto-fingerprint/drift panels (each rendered as "not
+      available"/"not observable" rather than omitted when null, per §12), and the
+      evidence-linked findings table, using the same severity color mapping
+      (CRITICAL red / HIGH orange / MEDIUM yellow / LOW blue / INFO gray) Stage 8's
+      dashboard already established, so a finding reads the same way in the UI and in the
+      exported report. Findings render in the order `rules.engine.evaluate_session()`
+      already sorts them (CRITICAL-first) rather than re-sorting in the template, where a
+      naive alphabetical sort on the severity string would have put CRITICAL last.
+      Autoescaping is on deliberately, not just left at the Jinja2 default: evidence
+      strings (e.g. a STARTTLS-stripping finding's evidence is the literal leaked
+      plaintext `LOGIN` command) are attacker-observable packet bytes, so unescaped
+      interpolation into the report HTML would be a stored-XSS vector against whoever
+      opens it.
+
+      `render_pdf()` imports WeasyPrint lazily, inside the function, rather than at module
+      level: WeasyPrint dlopens native Pango/cairo/gdk-pixbuf libraries the moment it's
+      imported, which aren't installed on a bare Windows dev machine (confirmed while
+      building this stage - `import weasyprint` raises `OSError`, not `ImportError`, from
+      deep inside `weasyprint.text.ffi`) and eagerly importing it would have broken
+      `import app.reports.renderer` - and therefore the JSON/HTML routes too - in exactly
+      the environment least likely to have GTK installed. `reports/router.py`'s PDF route
+      catches `(ImportError, OSError)` around the render call and returns 503 with a
+      message pointing at `/report.json`/`/report.html` instead of a bare stack trace;
+      this sandbox is one such environment, so the PDF path is verified only up to that
+      graceful-503 behavior here (per CLAUDE.md's own "report not observable, never
+      crash" spirit) - a machine with WeasyPrint's system dependencies installed (see
+      https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#installation) gets
+      a real PDF from the same endpoint with no code change.
+
+      Frontend: `frontend/src/pages/CaptureDashboardPage.jsx` gained a small
+      `ReportDownloads` row of `json`/`html`/`pdf` links next to the breadcrumb, pointing
+      at the new endpoints via a new `getReportUrl()` in `api/client.js` - plain `<a
+      href>` tags, not `fetch()`, so the browser's native download handling (driven by the
+      backend's `Content-Disposition` header) does the work instead of pulling bytes
+      through JS just to hand them back. Not exercised in a live browser in this sandbox -
+      no Node.js/npm install available here (Stage 8's `npm install && npm run dev` needs
+      it) - but the backend HTML the links point at was verified directly by loading
+      `report.html` in the browser pane against a real analyzed capture.
+      **How to test:** `cd backend && python -m pytest -v` (163 tests total; 5 new in
+      `test_reports.py` covering JSON parity with the live dashboard endpoint, HTML
+      rendering + evidence-escaping for the STARTTLS-stripping scenario (file `14`), the
+      PDF route's render-or-graceful-503 behavior, and 404/409 for an unknown/incomplete
+      capture). To sanity-check by hand: `uvicorn app.main:app --reload --port 8000`,
+      upload a capture via `POST /api/analyses`, then
+      `curl http://127.0.0.1:8000/api/analyses/<capture_id>/report.json -o report.json`,
+      `curl http://127.0.0.1:8000/api/analyses/<capture_id>/report.html -o report.html`
+      (open in a browser), and
+      `curl -i http://127.0.0.1:8000/api/analyses/<capture_id>/report.pdf` (expect a real
+      PDF if WeasyPrint's native deps are installed, otherwise a 503 with an explanatory
+      `detail`).
+- [x] **Stage 12 — Integration + demo hardening.** New `backend/scripts/demo_metrics.py`
+      runs the full pipeline (`api.pipeline.analyze_pcap_file()` - the exact function
+      `POST /api/analyses` calls, not a separate demo-only path) standalone against every
+      pcap in `securemail_test_pcaps/`, with no API/DB/server required, and reports the
+      §11 metrics: PCAP size/packet count (via a plain `scapy.rdpcap` count, independent
+      of the reassembler), TCP streams reconstructed, sessions per protocol, TLS sessions
+      detected, certificates extracted, findings by severity, anomalous sessions, analysis
+      time, and detection accuracy against the manifest's labels (`ai_analysis
+      .predicted_label` vs. the same per-session ground truth `ml/dataset.py` trains on,
+      including file `22`'s positional per-session override - `ml/dataset.py`'s
+      `_label_by_file` was renamed to the public `label_by_file` so this script could
+      reuse it instead of re-deriving the same labels a second way). Also writes a
+      pre-generated JSON/HTML (and PDF, if WeasyPrint's native deps are present) report
+      per scenario into `backend/demo_assets/reports/` - a fallback the team can show
+      if live upload fails on stage during the actual SIH demo - via the exact Stage 11
+      renderer, just fed a synthesized `capture_id`/`status`/timestamps instead of a real
+      DB row, since this script never touches the database. `backend/demo_assets/` is
+      generated output (gitignored, like `backend/uploads/`), regenerated by running the
+      script, not committed.
+
+      Confirmed clean by actually running it: **24 real pcap files** (CLAUDE.md's "22
+      scenario files" undercounts by 2 - scenario `14`'s three STARTTLS failure modes
+      are three separate files, not one combined pcap, so `01`-`22` numbering spans 24
+      files on disk), 368 packets, 26 sessions reconstructed (SMTP 18 / IMAP 3 / POP3 2 /
+      SMTPS 1 / UNKNOWN 2), 20 TLS sessions and 19 certificates extracted, 6 CRITICAL + 29
+      HIGH + 1 INFO findings, 4 anomalous sessions flagged, 100% AI-label accuracy
+      (expected and explicitly *not* claimed as generalization - it's the same ~26
+      sessions the model trained on, per Stage 9's own documented caveat), whole-dataset
+      analysis time ~4 seconds. No new bugs turned up in this full run: Stages 2-10 were
+      each already validated against this same dataset as they were built, so this stage
+      confirmed integration rather than finding fresh edge cases - the one code change was
+      the `label_by_file` rename for reuse, not a fix.
+
+      New `tests/test_full_dataset_integration.py` uploads all 24 files through the real
+      FastAPI app (not the standalone script) and asserts every one reaches `COMPLETE`
+      with well-formed `ai_analysis`/`crypto_fingerprint`/`drift`/evidence-linked findings
+      on every session, plus a working `report.json`/`report.html` for each - the one test
+      that exercises the whole dataset through the actual HTTP API end-to-end in one run,
+      rather than the handful of files each earlier stage's tests pick for their specific
+      code path.
+
+      Not done in this stage, both requiring things this sandbox doesn't have: a
+      **Docker Compose** run of the full `api`/`worker`/`redis`/`postgres`/`frontend`
+      stack (no `docker` binary here - same gap Stage 7 already noted) and a **demo video**
+      (needs a screen recorder and a human narrating a live walkthrough, not something a
+      coding session produces). The backup report assets and metrics this stage does
+      produce are exactly what a demo video or Docker walkthrough would need to fall back
+      on if either goes wrong on the day.
+      **How to test:** `cd backend && python -m pytest -v` (164 tests total; 1 new in
+      `test_full_dataset_integration.py`). To regenerate the metrics + backup reports by
+      hand: `cd backend && ../.venv/Scripts/python.exe scripts/demo_metrics.py` - prints a
+      one-line summary and writes `demo_assets/metrics.json`, `demo_assets/metrics.md`,
+      and `demo_assets/reports/<scenario>.{json,html}` (`.pdf` too if WeasyPrint's native
+      deps are installed - see Stage 11's note on that).
 
 ## 7. JSON contract (freeze early, version it)
 

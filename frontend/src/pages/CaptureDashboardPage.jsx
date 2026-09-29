@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { getCapture } from "../api/client";
+import { getCapture, getReportUrl } from "../api/client";
 import { PostureGauge } from "../components/PostureGauge";
 import { SeverityBadge } from "../components/SeverityBadge";
 import { StatusBadge } from "../components/StatusBadge";
@@ -74,7 +74,10 @@ export function CaptureDashboardPage() {
 
   return (
     <div className="p-4 max-w-[1400px] w-full mx-auto flex flex-col gap-4">
-      <Breadcrumb filename={capture.summary.capture_file} />
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <Breadcrumb filename={capture.summary.capture_file} />
+        <ReportDownloads captureId={captureId} />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="border border-border bg-panel p-4 flex items-center gap-4">
@@ -245,6 +248,26 @@ function AttackSurfacePanel({ surface }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Stage 11: report export links straight to backend/app/reports/router.py's
+// download endpoints - plain <a> tags so the browser's own download handling takes
+// over from the server's Content-Disposition: attachment header.
+function ReportDownloads({ captureId }) {
+  return (
+    <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-widest text-text-faint">
+      <span>Report:</span>
+      {["json", "html", "pdf"].map((format) => (
+        <a
+          key={format}
+          href={getReportUrl(captureId, format)}
+          className="border border-border px-2 py-1 hover:text-accent hover:border-accent"
+        >
+          {format}
+        </a>
+      ))}
     </div>
   );
 }

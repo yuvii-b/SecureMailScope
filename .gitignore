@@ -53,3 +53,6 @@ backend/app/reports/output/
 *.pdf
 *.docx
 !securemail_test_pcaps/certificates/*.pdf
+
+# --- Stage 12: regeneratable demo metrics + backup reports (run scripts/demo_metrics.py) ---
+backend/demo_assets/
